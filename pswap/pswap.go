@@ -129,11 +129,19 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			if name, ok := argName(x); ok {
 				if pi, ok := paramIndex(name, funParams, func(a, b string) bool { return a == b }); ok {
 					if ai != pi {
-						report(n, name, ai, pi)
+						at := pass.TypesInfo.TypeOf(x)
+						pt := funParams[pi].Type
+						if types.AssignableTo(pt, at) {
+							report(n, name, ai, pi)
+						}
 					}
 				} else if pi, ok := paramIndex(name, funParams, strings.EqualFold); ok {
 					if ai != pi {
-						report(n, name, ai, pi)
+						at := pass.TypesInfo.TypeOf(x)
+						pt := funParams[pi].Type
+						if types.AssignableTo(pt, at) {
+							report(n, name, ai, pi)
+						}
 					}
 				}
 			}

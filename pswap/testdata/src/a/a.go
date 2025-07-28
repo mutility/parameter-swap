@@ -60,4 +60,18 @@ func tests() {
 	ABC(f().B, f().A, f().C) // want "argument A in position 1 matches parameter in position 0" "argument B in position 0 matches parameter in position 1"
 }
 
+type mock struct {
+	x *expectations
+}
+
+func (m *mock) ExpectFoo(t TB, fn func(int, string) string) { // want ExpectFoo:`&\[\{t a.TB\} \{fn func\(int, string\) string}]`
+	m.x.Expect(t, "Foo", fn) // skip mismatched type (string != func)
+}
+
+type expectations struct{}
+
+func (x *expectations) Expect(t TB, fn string, e ...any) {} // want Expect:`&\[\{t a.TB\} \{fn string\} \{e \[\]any}]`
+
+type TB interface{ Helper() }
+
 var _ = tests
