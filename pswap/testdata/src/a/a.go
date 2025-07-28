@@ -6,6 +6,7 @@ func abc(a, b, c string) {} // want abc:`&\[\{a string} \{b string} \{c string}]
 func ABC(A, B, C string) {} // want ABC:`&\[\{A string} \{B string} \{C string}]`
 func ghi(g, h, i string) {} // want ghi:`&\[\{g string} \{h string} \{i string}]`
 func AAaa(AA, aa string) {} // want AAaa:`&\[\{AA string} \{aa string}]`
+func anys(a, b, c any)   {} // want anys:`&\[\{a any} \{b any} \{c any}]`
 
 type D struct {
 	a, b, c string
@@ -29,6 +30,8 @@ func tests() {
 	AAaa(aA, Aa) // good -- neither AA or aa is perfect, so accept matching index
 	AAaa(AA, aa) // good
 	AAaa(aa, AA) // want "AAaa argument aa in position 0 matches parameter in position 1" "AAaa argument AA in position 1 matches parameter in position 0"
+
+	anys(c, b, a) // want "anys argument c in position 0 matches parameter in position 2" "anys argument a in position 2 matches parameter in position 0"
 
 	pkg.ABC(a, b, c) // good
 	pkg.ABC(a, a, c) // dup name is visible

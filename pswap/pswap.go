@@ -49,9 +49,42 @@ type (
 		Name string
 		Type types.Type
 	}
+	arg          param
+	paramMatcher func(param) bool
 )
 
 func (*paramList) AFact() {}
+
+func (pl *paramList) Index(ai int, matchers ...paramMatcher) (int, param) {
+	for _, match := range matchers {
+		// prefer matching index when available over, e.g. similarly case mismatch in earlier param
+		if ai < len(*pl) && match((*pl)[ai]) {
+			return ai, (*pl)[ai]
+		}
+		for i, p := range *pl {
+			if match(p) {
+				return i, p
+			}
+		}
+	}
+	return -1, param{}
+}
+
+func (a arg) CaseMatch(p param) bool {
+	return a.Name == p.Name && types.AssignableTo(a.Type, p.Type)
+}
+
+func (a arg) NoCaseMatch(p param) bool {
+	return strings.EqualFold(a.Name, p.Name) && types.AssignableTo(a.Type, p.Type)
+}
+
+func (a arg) CaseTypeMatch(p param) bool {
+	return a.Name == p.Name && a.Type == p.Type
+}
+
+func (a arg) NoCaseTypeMatch(p param) bool {
+	return strings.EqualFold(a.Name, p.Name) && a.Type == p.Type
+}
 
 func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 	var lastCall struct {
@@ -113,19 +146,6 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return ""
 	}
 
-	paramIndex := func(name string, ai int, pl paramList, match func(string, string) bool) (int, bool) {
-		// prefer matching index when available over, e.g. similarly case mismatch in earlier param
-		if ai < len(pl) && match(name, pl[ai].Name) {
-			return ai, true
-		}
-		for i, p := range pl {
-			if match(name, p.Name) {
-				return i, true
-			}
-		}
-		return -1, false
-	}
-
 	report := func(n ast.Node, name string, ai int, f types.Object, pi int) {
 		d := analysis.Diagnostic{Pos: n.Pos()}
 		if funName := f.Name(); name != "" {
@@ -168,21 +188,16 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		}
 		for ai, x := range c.Args {
 			if name := argName(x); name != "" {
-				if pi, ok := paramIndex(name, ai, funParams, func(a, b string) bool { return a == b }); ok {
-					if ai != pi && pi < len(c.Args) && argName(c.Args[pi]) != name {
-						at := pass.TypesInfo.TypeOf(x)
-						pt := funParams[pi].Type
-						if types.AssignableTo(pt, at) {
-							report(n, name, ai, funObj, pi)
-						}
+				a := arg{Name: name, Type: pass.TypesInfo.TypeOf(x)}
+				matchers := func() []paramMatcher {
+					if v.ExactTypeOnly {
+						return []paramMatcher{a.CaseTypeMatch, a.NoCaseTypeMatch}
 					}
-				} else if pi, ok := paramIndex(name, ai, funParams, strings.EqualFold); ok {
-					if ai != pi && pi < len(c.Args) && argName(c.Args[pi]) != name {
-						at := pass.TypesInfo.TypeOf(x)
-						pt := funParams[pi].Type
-						if types.AssignableTo(pt, at) {
-							report(n, name, ai, funObj, pi)
-						}
+					return []paramMatcher{a.CaseMatch, a.NoCaseMatch}
+				}
+				if pi, _ := funParams.Index(ai, matchers()...); pi >= 0 {
+					if pi != ai && pi < len(c.Args) && argName(c.Args[pi]) != name {
+						report(n, name, ai, funObj, pi)
 					}
 				}
 			}
