@@ -5,6 +5,7 @@
 package pswap
 
 import (
+	"fmt"
 	"go/ast"
 	"go/types"
 	"strings"
@@ -104,8 +105,20 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return -1, false
 	}
 
-	report := func(n ast.Node, name string, ai, pi int) {
-		pass.Reportf(n.Pos(), "argument %s in position %d matches parameter in position %d", name, ai, pi)
+	report := func(n ast.Node, name string, ai int, f types.Object, pi int) {
+		d := analysis.Diagnostic{Pos: n.Pos()}
+		if funName := f.Name(); name != "" {
+			d.Message = fmt.Sprintf("%s argument %s in position %d matches parameter in position %d", funName, name, ai, pi)
+		} else {
+			d.Message = fmt.Sprintf("argument %s in position %d matches parameter in position %d", name, ai, pi)
+		}
+		if f != nil && f.Pos() >= 0 {
+			d.Related = []analysis.RelatedInformation{{
+				Pos:     f.Pos(),
+				Message: fmt.Sprintf("signature: %s", f),
+			}}
+		}
+		pass.Report(d)
 	}
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -136,7 +149,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 						at := pass.TypesInfo.TypeOf(x)
 						pt := funParams[pi].Type
 						if types.AssignableTo(pt, at) {
-							report(n, name, ai, pi)
+							report(n, name, ai, funObj, pi)
 						}
 					}
 				} else if pi, ok := paramIndex(name, ai, funParams, strings.EqualFold); ok {
@@ -144,7 +157,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 						at := pass.TypesInfo.TypeOf(x)
 						pt := funParams[pi].Type
 						if types.AssignableTo(pt, at) {
-							report(n, name, ai, pi)
+							report(n, name, ai, funObj, pi)
 						}
 					}
 				}
