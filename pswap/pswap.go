@@ -197,7 +197,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 				}
 				if pi, _ := funParams.Index(ai, matchers()...); pi >= 0 {
 					if pi != ai && pi < len(c.Args) && argName(c.Args[pi]) != name {
-						report(n, name, ai, funObj, pi)
+						report(x, name, ai, funObj, pi)
 					}
 				}
 			}
