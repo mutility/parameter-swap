@@ -81,14 +81,14 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return nil
 	}
 
-	argName := func(x ast.Expr) (string, bool) {
+	argName := func(x ast.Expr) string {
 		switch x := x.(type) {
 		case *ast.Ident:
-			return x.Name, true
+			return x.Name
 		case *ast.SelectorExpr:
-			return x.Sel.Name, true
+			return x.Sel.Name
 		}
-		return "", false
+		return ""
 	}
 
 	paramIndex := func(name string, pl paramList, match func(string, string) bool) (int, bool) {
@@ -126,9 +126,9 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			pass.ImportObjectFact(funObj, &funParams)
 		}
 		for ai, x := range c.Args {
-			if name, ok := argName(x); ok {
+			if name := argName(x); name != "" {
 				if pi, ok := paramIndex(name, funParams, func(a, b string) bool { return a == b }); ok {
-					if ai != pi {
+					if ai != pi && argName(c.Args[pi]) != name {
 						at := pass.TypesInfo.TypeOf(x)
 						pt := funParams[pi].Type
 						if types.AssignableTo(pt, at) {
@@ -136,7 +136,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 						}
 					}
 				} else if pi, ok := paramIndex(name, funParams, strings.EqualFold); ok {
-					if ai != pi {
+					if ai != pi && argName(c.Args[pi]) != name {
 						at := pass.TypesInfo.TypeOf(x)
 						pt := funParams[pi].Type
 						if types.AssignableTo(pt, at) {
