@@ -45,6 +45,7 @@ library use by setting fields on `pswap.Analyzer()`.
 Flag | Field | Meaning
 -|-|-
 `-exact` | ExactTypeOnly | Suppress reports of mismatched parameters of mismatching types
+`-gen` | IncludeGeneratedFiles | Include reports from generated files
 
 ## Bug reports and feature contributions
 

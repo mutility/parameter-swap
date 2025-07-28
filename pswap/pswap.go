@@ -22,7 +22,8 @@ the results of crossing your parameters can be disastrous.`
 
 type pswapAnalyzer struct {
 	*analysis.Analyzer
-	ExactTypeOnly bool
+	ExactTypeOnly         bool
+	IncludeGeneratedFiles bool
 }
 
 func Analyzer() *pswapAnalyzer {
@@ -35,6 +36,7 @@ func Analyzer() *pswapAnalyzer {
 		},
 	}
 	a.Flags.BoolVar(&a.ExactTypeOnly, "exact", false, "suppress pswap reports when types aren't an exact match")
+	a.Flags.BoolVar(&a.IncludeGeneratedFiles, "gen", false, "include reports from generated files")
 
 	a.Run = a.run
 
@@ -52,6 +54,25 @@ type (
 func (*paramList) AFact() {}
 
 func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
+	var lastCall struct {
+		File      *ast.File
+		Generated bool
+	}
+	isCallGenerated := func(n ast.Node) bool {
+		pos := n.Pos()
+		// opt: expect adjacent tokens to be from same file
+		if lastCall.File != nil && lastCall.File.FileStart <= pos && pos <= lastCall.File.FileEnd {
+			return lastCall.Generated
+		}
+		for _, f := range pass.Files {
+			if f.FileStart <= pos && pos <= f.FileEnd {
+				lastCall.File = f
+				lastCall.Generated = ast.IsGenerated(f)
+				return lastCall.Generated
+			}
+		}
+		return false
+	}
 	// track local function's parameters
 	locals := make(map[types.Object]paramList)
 	paramsOf := func(fun *ast.FuncType) (l paramList) {
@@ -133,6 +154,9 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		}
 	})
 	inspect.Preorder([]ast.Node{new(ast.CallExpr)}, func(n ast.Node) {
+		if !v.IncludeGeneratedFiles && isCallGenerated(n) {
+			return
+		}
 		c := n.(*ast.CallExpr)
 		funObj := callFunObj(c)
 		if funObj == nil {
