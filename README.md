@@ -1,4 +1,4 @@
-# Variable Format
+# Parameter Swap
 
 `parameter-swap` is a
 [go/analysis](https://pkg.go.dev/golang.org/x/tools/go/analysis)-based tool that
