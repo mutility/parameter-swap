@@ -91,7 +91,11 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return ""
 	}
 
-	paramIndex := func(name string, pl paramList, match func(string, string) bool) (int, bool) {
+	paramIndex := func(name string, ai int, pl paramList, match func(string, string) bool) (int, bool) {
+		// prefer matching index when available over, e.g. similarly case mismatch in earlier param
+		if ai < len(pl) && match(name, pl[ai].Name) {
+			return ai, true
+		}
 		for i, p := range pl {
 			if match(name, p.Name) {
 				return i, true
@@ -127,16 +131,16 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		}
 		for ai, x := range c.Args {
 			if name := argName(x); name != "" {
-				if pi, ok := paramIndex(name, funParams, func(a, b string) bool { return a == b }); ok {
-					if ai != pi && argName(c.Args[pi]) != name {
+				if pi, ok := paramIndex(name, ai, funParams, func(a, b string) bool { return a == b }); ok {
+					if ai != pi && pi < len(c.Args) && argName(c.Args[pi]) != name {
 						at := pass.TypesInfo.TypeOf(x)
 						pt := funParams[pi].Type
 						if types.AssignableTo(pt, at) {
 							report(n, name, ai, pi)
 						}
 					}
-				} else if pi, ok := paramIndex(name, funParams, strings.EqualFold); ok {
-					if ai != pi && argName(c.Args[pi]) != name {
+				} else if pi, ok := paramIndex(name, ai, funParams, strings.EqualFold); ok {
+					if ai != pi && pi < len(c.Args) && argName(c.Args[pi]) != name {
 						at := pass.TypesInfo.TypeOf(x)
 						pt := funParams[pi].Type
 						if types.AssignableTo(pt, at) {
