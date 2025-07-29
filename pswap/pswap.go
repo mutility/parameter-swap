@@ -107,15 +107,41 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 	}
 
 	funOf := func(c *ast.CallExpr) *types.Func {
+		// return typeutil.StaticCallee(pass.TypesInfo, c)
 		switch f := c.Fun.(type) {
 		case *ast.Ident:
 			return pass.TypesInfo.ObjectOf(f).(*types.Func)
 		case *ast.SelectorExpr:
 			return selobj(pass.TypesInfo, f).(*types.Func)
-			// case *ast.CallExpr, *ast.TypeAssertExpr, *ast.ParenExpr, *ast.IndexExpr:
-			// case *ast.FuncLit, *ast.ArrayType, *ast.InterfaceType, *ast.MapType, *ast.ChanType, *ast.StructType:
+		case *ast.FuncLit:
+			// Can't find a *types.Func for a funclit; synthesize the parts we need.
+			// This is presumably brittle, but works well enough.
+			variadic := false
+			paramsOf := func(fl *ast.FieldList) (vs []*types.Var) {
+				if fl == nil {
+					return nil
+				}
+				for _, p := range fl.List {
+					ptype := p.Type
+					if ell, ok := p.Type.(*ast.Ellipsis); ok {
+						ptype = ell.Elt
+						variadic = true
+					}
+					for _, n := range p.Names {
+						vs = append(vs, types.NewVar(p.Pos(), nil, n.Name, pass.TypesInfo.TypeOf(ptype)))
+					}
+				}
+				return vs
+			}
+			paramVars := paramsOf(f.Type.Params)
+			resultVars := paramsOf(f.Type.Results)
+			params := types.NewTuple(paramVars...)
+			results := types.NewTuple(resultVars...)
+			sig := types.NewSignatureType(nil, nil, nil, params, results, variadic)
+			fun := types.NewFunc(c.Fun.Pos(), nil, "func", sig)
+			return fun
 			// default:
-			// 	pt("unhandled callfun "+pp(n.Fun), n.Fun)
+			// 	fmt.Printf("unhandled funOf %T %#[1]v\n", f)
 		}
 		return nil
 	}
