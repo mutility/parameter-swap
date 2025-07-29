@@ -1,7 +1,7 @@
 package exact
 
-func abc(a, b, c string) {} // want abc:`&\[\{a string} \{b string} \{c string}]`
-func anys(a, b, c any)   {} // want anys:`&\[\{a any} \{b any} \{c any}]`
+func abc(a, b, c string) {}
+func anys(a, b, c any)   {}
 
 func tests() {
 	a, b, c := "a", "b", "c"

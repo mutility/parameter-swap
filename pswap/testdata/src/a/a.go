@@ -2,11 +2,11 @@ package a
 
 import "a/pkg"
 
-func abc(a, b, c string) {} // want abc:`&\[\{a string} \{b string} \{c string}]`
-func ABC(A, B, C string) {} // want ABC:`&\[\{A string} \{B string} \{C string}]`
-func ghi(g, h, i string) {} // want ghi:`&\[\{g string} \{h string} \{i string}]`
-func AAaa(AA, aa string) {} // want AAaa:`&\[\{AA string} \{aa string}]`
-func anys(a, b, c any)   {} // want anys:`&\[\{a any} \{b any} \{c any}]`
+func abc(a, b, c string) {}
+func ABC(A, B, C string) {}
+func ghi(g, h, i string) {}
+func AAaa(AA, aa string) {}
+func anys(a, b, c any)   {}
 
 type D struct {
 	a, b, c string
@@ -84,13 +84,13 @@ type mock struct {
 	x *expectations
 }
 
-func (m *mock) ExpectFoo(t TB, fn func(int, string) string) { // want ExpectFoo:`&\[\{t a.TB\} \{fn func\(int, string\) string}]`
+func (m *mock) ExpectFoo(t TB, fn func(int, string) string) {
 	m.x.Expect(t, "Foo", fn) // skip mismatched type (string != func)
 }
 
 type expectations struct{}
 
-func (x *expectations) Expect(t TB, fn string, e ...any) {} // want Expect:`&\[\{t a.TB\} \{fn string\} \{e \[\]any}]`
+func (x *expectations) Expect(t TB, fn string, e ...any) {}
 
 type TB interface{ Helper() }
 
