@@ -5,7 +5,6 @@
 package pswap
 
 import (
-	"fmt"
 	"go/ast"
 	"go/types"
 	"strings"
@@ -122,12 +121,12 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return l
 	}
 
-	callFunObj := func(c *ast.CallExpr) types.Object {
+	callFunObj := func(c *ast.CallExpr) *types.Func {
 		switch f := c.Fun.(type) {
 		case *ast.Ident:
-			return pass.TypesInfo.ObjectOf(f)
+			return pass.TypesInfo.ObjectOf(f).(*types.Func)
 		case *ast.SelectorExpr:
-			return selobj(pass.TypesInfo, f)
+			return selobj(pass.TypesInfo, f).(*types.Func)
 			// case *ast.CallExpr, *ast.TypeAssertExpr, *ast.ParenExpr, *ast.IndexExpr:
 			// case *ast.FuncLit, *ast.ArrayType, *ast.InterfaceType, *ast.MapType, *ast.ChanType, *ast.StructType:
 			// default:
@@ -146,20 +145,35 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return ""
 	}
 
-	report := func(n ast.Node, name string, ai int, f types.Object, pi int) {
-		d := analysis.Diagnostic{Pos: n.Pos()}
-		if funName := f.Name(); name != "" {
-			d.Message = fmt.Sprintf("%s argument %s in position %d matches parameter in position %d", funName, name, ai, pi)
-		} else {
-			d.Message = fmt.Sprintf("argument %s in position %d matches parameter in position %d", name, ai, pi)
+	report := func(n ast.Node, argName, paramName string, ai int, f *types.Func, pi int) {
+		// similar to t.String, but omits package names
+		var recvType func(t types.Type) string
+		recvType = func(t types.Type) string {
+			switch t := t.(type) {
+			case *types.Pointer:
+				return "(*" + recvType(t.Elem()) + ")."
+			case *types.Named:
+				// what of t.TypeParams(), t.TypeArgs()?
+				return t.Obj().Name()
+			}
+			return ""
 		}
-		if f != nil && f.Pos() >= 0 {
-			d.Related = []analysis.RelatedInformation{{
-				Pos:     f.Pos(),
-				Message: fmt.Sprintf("signature: %s", f),
-			}}
+		funcType := ""
+		if recv := f.Signature().Recv(); recv != nil {
+			funcType = recvType(recv.Type())
 		}
-		pass.Report(d)
+		funcName, funcSig := f.Name(), f.Signature().Params()
+		if funcName == "" {
+			funcName = "func"
+		}
+
+		pass.Reportf(
+			n.Pos(),
+			"passes '%s' as '%s' in call to %s%s%s (position %d vs %d)",
+			argName, paramName,
+			funcType, funcName, funcSig,
+			ai, pi,
+		)
 	}
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -187,8 +201,8 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			pass.ImportObjectFact(funObj, &funParams)
 		}
 		for ai, x := range c.Args {
-			if name := argName(x); name != "" {
-				a := arg{Name: name, Type: pass.TypesInfo.TypeOf(x)}
+			if aname := argName(x); aname != "" {
+				a := arg{Name: aname, Type: pass.TypesInfo.TypeOf(x)}
 				matchers := func() []paramMatcher {
 					if v.ExactTypeOnly {
 						return []paramMatcher{a.CaseTypeMatch, a.NoCaseTypeMatch}
@@ -196,8 +210,14 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 					return []paramMatcher{a.CaseMatch, a.NoCaseMatch}
 				}
 				if pi, _ := funParams.Index(ai, matchers()...); pi >= 0 {
-					if pi != ai && pi < len(c.Args) && argName(c.Args[pi]) != name {
-						report(x, name, ai, funObj, pi)
+					if pi != ai && pi < len(c.Args) && argName(c.Args[pi]) != aname {
+						pname := ""
+						if ai >= len(funParams) {
+							pname = "..." + funParams[len(funParams)-1].Name
+						} else {
+							pname = funParams[ai].Name
+						}
+						report(x, aname, pname, ai, funObj, pi)
 					}
 				}
 			}
