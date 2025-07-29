@@ -47,8 +47,8 @@ type (
 	paramMatcher func(*param) bool
 )
 
-func findParam(fun *types.Func, argIndex int, matchers ...paramMatcher) (int, *param) {
-	params := fun.Signature().Params()
+func findParam(sig *types.Signature, argIndex int, matchers ...paramMatcher) (int, *param) {
+	params := sig.Params()
 	for _, match := range matchers {
 		// prefer matching index when available over, e.g. similarly case mismatch in earlier param
 		if argIndex < params.Len() && match((*param)(params.At(argIndex))) {
@@ -73,15 +73,15 @@ func (a *arg) CaseMatch(p *param) bool {
 	return a.Name() == p.Name() && types.AssignableTo(a.Type(), p.Type())
 }
 
-func (a arg) NoCaseMatch(p *param) bool {
+func (a *arg) NoCaseMatch(p *param) bool {
 	return strings.EqualFold(a.Name(), p.Name()) && types.AssignableTo(a.Type(), p.Type())
 }
 
-func (a arg) CaseTypeMatch(p *param) bool {
+func (a *arg) CaseTypeMatch(p *param) bool {
 	return a.Name() == p.Name() && a.Type() == p.Type()
 }
 
-func (a arg) NoCaseTypeMatch(p *param) bool {
+func (a *arg) NoCaseTypeMatch(p *param) bool {
 	return strings.EqualFold(a.Name(), p.Name()) && a.Type() == p.Type()
 }
 
@@ -120,6 +120,28 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return nil
 	}
 
+	sigOf := func(c *ast.CallExpr) *types.Signature {
+		switch callee := pass.TypesInfo.TypeOf(c.Fun).(type) {
+		case *types.Signature:
+			if callee.TypeParams() == nil {
+				return callee
+			}
+			var inst types.Instance
+			switch fun := c.Fun.(type) {
+			case *ast.Ident:
+				inst = pass.TypesInfo.Instances[fun]
+			case *ast.SelectorExpr:
+				inst = pass.TypesInfo.Instances[fun.Sel]
+			}
+
+			if sig, ok := inst.Type.(*types.Signature); ok {
+				return sig
+			}
+			return callee
+		}
+		return nil
+	}
+
 	varOf := func(x ast.Expr) *types.Var {
 		switch x := x.(type) {
 		case *ast.Ident:
@@ -129,10 +151,11 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		case *ast.BasicLit:
 			return nil
 		}
+		// fmt.Printf("unhandled %T %[1]v\n", x)
 		return nil
 	}
 
-	report := func(n ast.Node, arg *arg, ai int, f *types.Func, pi int) {
+	report := func(n ast.Node, arg *arg, ai int, fun *types.Func, sig *types.Signature, pi int) {
 		// similar to t.String, but omits package names
 		var recvType func(t types.Type) string
 		recvType = func(t types.Type) string {
@@ -146,15 +169,29 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			return ""
 		}
 		funcType := ""
-		if recv := f.Signature().Recv(); recv != nil {
+		if recv := sig.Recv(); recv != nil {
 			funcType = recvType(recv.Type())
 		}
-		funcName, funcSig := f.Name(), f.Signature().Params()
+		funcName, funcSig := fun.Name(), sig.Params()
 		if funcName == "" {
 			funcName = "func"
 		}
 
-		params := f.Signature().Params()
+		funcTP := ""
+		if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
+			tparams := make([]string, fun.Signature().TypeParams().Len())
+			for i := range fun.Signature().Params().Len() {
+				pt := fun.Signature().Params().At(i).Type()
+				for ti := range len(tparams) {
+					if fun.Signature().TypeParams().At(ti) == pt {
+						tparams[ti] = sig.Params().At(i).Type().String()
+					}
+				}
+			}
+			funcTP = "[" + strings.Join(tparams, ", ") + "]"
+		}
+
+		params := sig.Params()
 		ppass := func() *types.Var {
 			if ai >= params.Len() {
 				return params.At(params.Len() - 1)
@@ -165,9 +202,9 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 
 		pass.Reportf(
 			n.Pos(),
-			"passes '%s' as '%s' in call to %s%s%s (position %d vs %d)",
+			"passes '%s' as '%s' in call to %s%s%s%s (position %d vs %d)",
 			arg.Name(), ppass.Name(),
-			funcType, funcName, funcSig,
+			funcType, funcName, funcTP, funcSig,
 			ai, pi,
 		)
 	}
@@ -178,8 +215,8 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			return
 		}
 		call := n.(*ast.CallExpr)
-		fun := funOf(call)
-		if fun == nil {
+		sig := sigOf(call)
+		if sig == nil {
 			return
 		}
 		for ai, x := range call.Args {
@@ -194,9 +231,11 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 				}
 				return []paramMatcher{a.CaseMatch, a.NoCaseMatch}
 			}
-			if pi, _ := findParam(fun, ai, matchers()...); pi >= 0 {
-				if pi != ai && pi < len(call.Args) && varOf(call.Args[pi]).Name() != a.Name() {
-					report(x, a, ai, fun, pi)
+			if pi, _ := findParam(sig, ai, matchers()...); pi >= 0 {
+				if pi != ai && pi < len(call.Args) {
+					if v := varOf(call.Args[pi]); v == nil || v.Name() != a.Name() {
+						report(x, a, ai, funOf(call), sig, pi)
+					}
 				}
 			}
 		}
