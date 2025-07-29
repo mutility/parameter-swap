@@ -19,6 +19,11 @@ func f() D { return D{} }
 func TTT[T any](a, b, c T)           {}
 func TUV[T, U, V any](a T, b U, c V) {}
 
+type G[T any] struct{}
+
+func (G[T]) abc(a, b, c T)   {}
+func (*G[T]) pabc(a, b, c T) {}
+
 func tests() {
 	a, b, c, d := "a", "b", "c", D{}
 
@@ -90,6 +95,15 @@ func tests() {
 	TUV(a, b, c) // good
 	TUV(a, a, c) // dup name is visible
 	TUV(b, a, c) // want `passes 'a' as 'b' in call to TUV\[string, string, string\]\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to TUV\[string, string, string\]\(a string, b string, c string\) \(position 0 vs 1\)`
+
+	g := G[string]{}
+	g.abc(a, b, c) // good
+	g.abc(a, a, c) // dup name is visible
+	g.abc(b, a, c) // want `passes 'a' as 'b' in call to \(G\[string\]\).abc\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to \(G\[string\]\).abc\(a string, b string, c string\) \(position 0 vs 1\)`
+
+	g.pabc(a, b, c) // good
+	g.pabc(a, a, c) // dup name is visible
+	g.pabc(b, a, c) // want `passes 'a' as 'b' in call to \(\*G\[string\]\).pabc\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to \(\*G\[string\]\).pabc\(a string, b string, c string\) \(position 0 vs 1\)`
 }
 
 type mock struct {

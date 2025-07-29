@@ -157,19 +157,27 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 
 	report := func(n ast.Node, arg *arg, ai int, fun *types.Func, sig *types.Signature, pi int) {
 		// similar to t.String, but omits package names
-		var recvType func(t types.Type) string
-		recvType = func(t types.Type) string {
-			switch t := t.(type) {
-			case *types.Pointer:
-				return "(*" + recvType(t.Elem()) + ")."
-			case *types.Named:
-				// what of t.TypeParams(), t.TypeArgs()?
-				return t.Obj().Name()
+		recvType := func(t types.Type) string {
+			prefix := "("
+			if p, ok := t.(*types.Pointer); ok {
+				t = p.Elem()
+				prefix = "(*"
+			}
+			if n, ok := t.(*types.Named); ok {
+				infix := n.Obj().Name()
+				if ta := n.TypeArgs(); ta != nil {
+					tas := make([]string, ta.Len())
+					for i := range tas {
+						tas[i] = ta.At(i).String()
+					}
+					infix += "[" + strings.Join(tas, ", ") + "]"
+				}
+				return prefix + infix + ")."
 			}
 			return ""
 		}
 		funcType := ""
-		if recv := sig.Recv(); recv != nil {
+		if recv := fun.Signature().Recv(); recv != nil {
 			funcType = recvType(recv.Type())
 		}
 		funcName, funcSig := fun.Name(), sig.Params()
