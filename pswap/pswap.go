@@ -5,6 +5,7 @@
 package pswap
 
 import (
+	"cmp"
 	"go/ast"
 	"go/types"
 	"strings"
@@ -110,7 +111,16 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		// return typeutil.StaticCallee(pass.TypesInfo, c)
 		switch f := c.Fun.(type) {
 		case *ast.Ident:
-			return pass.TypesInfo.ObjectOf(f).(*types.Func)
+			switch o := pass.TypesInfo.ObjectOf(f).(type) {
+			case *types.Func:
+				return o
+			case *types.Var:
+				// attempt to synthesize a Func matching the local name
+				if sig, ok := o.Type().(*types.Signature); ok {
+					name := cmp.Or(o.Origin().Name(), "func")
+					return types.NewFunc(o.Pos(), nil, name, sig)
+				}
+			}
 		case *ast.SelectorExpr:
 			return selobj(pass.TypesInfo, f).(*types.Func)
 		case *ast.FuncLit:
@@ -182,6 +192,9 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 	}
 
 	report := func(n ast.Node, arg *arg, ai int, fun *types.Func, sig *types.Signature, pi int) {
+		if fun == nil {
+			return
+		}
 		// similar to t.String, but omits package names
 		recvType := func(t types.Type) string {
 			prefix := "("

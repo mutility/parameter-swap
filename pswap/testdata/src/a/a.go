@@ -108,6 +108,16 @@ func tests() {
 	func(a, b, c string) {}(a, b, c) // good
 	func(a, b, c string) {}(a, a, c) // dup name is visible
 	func(a, b, c string) {}(b, a, c) // want `passes 'a' as 'b' in call to func\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func\(a string, b string, c string\) \(position 0 vs 1\)`
+
+	f := func(a, b, c string) {}
+	f(a, b, c) // good
+	f(a, a, c) // dup name is visible
+	f(b, a, c) // want `passes 'a' as 'b' in call to f\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to f\(a string, b string, c string\) \(position 0 vs 1\)`
+
+	f = g.pabc
+	f(a, b, c) // good
+	f(a, a, c) // dup name is visible
+	f(b, a, c) // want `passes 'a' as 'b' in call to f\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to f\(a string, b string, c string\) \(position 0 vs 1\)`
 }
 
 type mock struct {
