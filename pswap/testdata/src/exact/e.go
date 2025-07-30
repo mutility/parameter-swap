@@ -8,7 +8,7 @@ func tests() {
 
 	abc(a, b, c) // good
 	abc(a, a, c) // dup name is visible
-	abc(b, a, c) // want `passes 'b' as 'a' in call to func exact.abc\(a string, b string, c string\) \(position 0 vs 1\)` `passes 'a' as 'b' in call to func exact.abc\(a string, b string, c string\) \(position 1 vs 0\)`
+	abc(b, a, c) // want `passes 'b' as 'a' in call to func abc\(a string, b string, c string\) \(position 0 vs 1\)` `passes 'a' as 'b' in call to func abc\(a string, b string, c string\) \(position 1 vs 0\)`
 
 	anys(c, b, a) // ignored string->any
 }

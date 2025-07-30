@@ -179,53 +179,62 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return arg{}
 	}
 
+	stripLocalPkg := strings.NewReplacer(func() (pairs []string) {
+		for _, c := range " \t()[]*&" {
+			pairs = append(pairs, string(c)+pass.Pkg.Path()+".", string(c))
+		}
+		return
+	}()...)
 	report := func(n ast.Node, arg arg, ai int, fun *types.Func, sig *types.Signature, pi int) {
 		if fun == nil {
 			return
 		}
 		ppass := sig.Params().At(min(sig.Params().Len()-1, ai))
 
-		var rfun any = fun
-		if fun.Name() == "func" {
-			rfun = sig
-		} else if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
-			// Partly resolve type parameters in our message.
-			// For example take func Foo[T any](foo T)
-			// When called with a string, its signature is func(foo string)
-			// Make a new func with new signature that merges these, yielding:
-			// func Foo[T = string](foo T)
-			resolveTypeParams := func(tup *types.TypeParamList) []*types.TypeParam {
-				l := make([]*types.TypeParam, tup.Len())
-				for i := range l {
-					tp := tup.At(i)
-					for i := range fun.Signature().Params().Len() {
-						if tv := fun.Signature().Params().At(i); tv.Type() == tp && i < sig.Params().Len() {
-							cv := sig.Params().At(i)
-							witheq := types.NewTypeName(tp.Obj().Pos(), tp.Obj().Pkg(), tp.Obj().Name()+" =", tp.Obj().Type())
-							tp = types.NewTypeParam(witheq, cv.Type())
-							break
+		signature := stripLocalPkg.Replace(func() string {
+			if fun.Name() == "func" {
+				return sig.String()
+			} else if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
+				// Partly resolve type parameters in our message.
+				// For example take func Foo[T any](foo T)
+				// When called with a string, its signature is func(foo string)
+				// Make a new func with new signature that merges these, yielding:
+				// func Foo[T = string](foo T)
+				resolveTypeParams := func(tup *types.TypeParamList) []*types.TypeParam {
+					l := make([]*types.TypeParam, tup.Len())
+					for i := range l {
+						tp := tup.At(i)
+						for i := range fun.Signature().Params().Len() {
+							if tv := fun.Signature().Params().At(i); tv.Type() == tp && i < sig.Params().Len() {
+								cv := sig.Params().At(i)
+								witheq := types.NewTypeName(tp.Obj().Pos(), tp.Obj().Pkg(), tp.Obj().Name()+" =", tp.Obj().Type())
+								tp = types.NewTypeParam(witheq, cv.Type())
+								break
+							}
 						}
+						l[i] = tp
 					}
-					l[i] = tp
+					return l
 				}
-				return l
-			}
 
-			rsig := types.NewSignatureType(
-				fun.Signature().Recv(),
-				nil,
-				resolveTypeParams(fun.Signature().TypeParams()),
-				fun.Signature().Params(),
-				fun.Signature().Results(),
-				sig.Variadic(),
-			)
-			rfun = types.NewFunc(fun.Pos(), fun.Pkg(), fun.Name(), rsig)
-		}
+				rsig := types.NewSignatureType(
+					fun.Signature().Recv(),
+					nil,
+					resolveTypeParams(fun.Signature().TypeParams()),
+					fun.Signature().Params(),
+					fun.Signature().Results(),
+					sig.Variadic(),
+				)
+				return types.NewFunc(fun.Pos(), fun.Pkg(), fun.Name(), rsig).String()
+			} else {
+				return fun.String()
+			}
+		}())
 
 		pass.Reportf(
 			n.Pos(),
 			"passes '%s' as '%s' in call to %s (position %d vs %d)",
-			arg.Name, ppass.Name(), rfun, ai, pi,
+			arg.Name, ppass.Name(), signature, ai, pi,
 		)
 	}
 
