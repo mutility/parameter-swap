@@ -43,9 +43,12 @@ func Analyzer() *pswapAnalyzer {
 }
 
 type (
-	arg          types.Var
 	param        types.Var
 	paramMatcher func(*param) bool
+	arg          struct {
+		Name string
+		Type types.Type
+	}
 )
 
 func findParam(sig *types.Signature, argIndex int, matchers ...paramMatcher) (int, *param) {
@@ -65,25 +68,23 @@ func findParam(sig *types.Signature, argIndex int, matchers ...paramMatcher) (in
 	return -1, nil
 }
 
-func (a *arg) Name() string       { return (*types.Var)(a).Name() }
 func (p *param) Name() string     { return (*types.Var)(p).Name() }
-func (a *arg) Type() types.Type   { return (*types.Var)(a).Type() }
 func (p *param) Type() types.Type { return (*types.Var)(p).Type() }
 
 func (a *arg) CaseMatch(p *param) bool {
-	return a.Name() == p.Name() && types.AssignableTo(a.Type(), p.Type())
+	return a.Name == p.Name() && types.AssignableTo(a.Type, p.Type())
 }
 
 func (a *arg) NoCaseMatch(p *param) bool {
-	return strings.EqualFold(a.Name(), p.Name()) && types.AssignableTo(a.Type(), p.Type())
+	return strings.EqualFold(a.Name, p.Name()) && types.AssignableTo(a.Type, p.Type())
 }
 
 func (a *arg) CaseTypeMatch(p *param) bool {
-	return a.Name() == p.Name() && a.Type() == p.Type()
+	return a.Name == p.Name() && a.Type == p.Type()
 }
 
 func (a *arg) NoCaseTypeMatch(p *param) bool {
-	return strings.EqualFold(a.Name(), p.Name()) && a.Type() == p.Type()
+	return strings.EqualFold(a.Name, p.Name()) && a.Type == p.Type()
 }
 
 func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
@@ -159,22 +160,25 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return callee
 	}
 
-	varOf := func(x ast.Expr) *types.Var {
+	nameTypeOf := func(x ast.Expr) arg {
+		var o types.Object
 		switch x := x.(type) {
 		case *ast.Ident:
-			v, _ := pass.TypesInfo.ObjectOf(x).(*types.Var)
-			return v
+			o = pass.TypesInfo.ObjectOf(x)
 		case *ast.SelectorExpr:
-			v, _ := pass.TypesInfo.ObjectOf(x.Sel).(*types.Var)
-			return v
+			o = pass.TypesInfo.ObjectOf(x.Sel)
 		case *ast.BasicLit:
-			return nil
+			return arg{"", pass.TypesInfo.TypeOf(x)}
+			// default:
+			// 	fmt.Printf("%s unhandled %T %[1]v\n", pass.Fset.Position(x.Pos()), x)
 		}
-		// fmt.Printf("unhandled %T %[1]v\n", x)
-		return nil
+		if o != nil {
+			return arg{o.Name(), o.Type()}
+		}
+		return arg{}
 	}
 
-	report := func(n ast.Node, arg *arg, ai int, fun *types.Func, sig *types.Signature, pi int) {
+	report := func(n ast.Node, arg arg, ai int, fun *types.Func, sig *types.Signature, pi int) {
 		if fun == nil {
 			return
 		}
@@ -230,7 +234,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		pass.Reportf(
 			n.Pos(),
 			"passes '%s' as '%s' in call to %s%s%s%s (position %d vs %d)",
-			arg.Name(), ppass.Name(),
+			arg.Name, ppass.Name(),
 			funcType, funcName, funcTP, funcSig,
 			ai, pi,
 		)
@@ -247,21 +251,20 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			return
 		}
 		for ai, x := range call.Args {
-			argVar := varOf(x)
-			if argVar == nil {
+			arg := nameTypeOf(x)
+			if arg.Name == "" {
 				continue
 			}
-			a := (*arg)(argVar)
 			matchers := func() []paramMatcher {
 				if v.ExactTypeOnly {
-					return []paramMatcher{a.CaseTypeMatch, a.NoCaseTypeMatch}
+					return []paramMatcher{arg.CaseTypeMatch, arg.NoCaseTypeMatch}
 				}
-				return []paramMatcher{a.CaseMatch, a.NoCaseMatch}
+				return []paramMatcher{arg.CaseMatch, arg.NoCaseMatch}
 			}
 			if pi, _ := findParam(sig, ai, matchers()...); pi >= 0 {
 				if pi != ai && pi < len(call.Args) {
-					if v := varOf(call.Args[pi]); v == nil || v.Name() != a.Name() {
-						report(x, a, ai, funOf(call), sig, pi)
+					if v := nameTypeOf(call.Args[pi]); v.Name != arg.Name {
+						report(x, arg, ai, funOf(call), sig, pi)
 					}
 				}
 			}
