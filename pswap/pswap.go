@@ -29,7 +29,7 @@ type pswapAnalyzer struct {
 func Analyzer() *pswapAnalyzer {
 	a := &pswapAnalyzer{
 		Analyzer: &analysis.Analyzer{
-			Name:     "varfmt",
+			Name:     "pswap",
 			Doc:      doc,
 			Requires: []*analysis.Analyzer{inspect.Analyzer},
 		},
