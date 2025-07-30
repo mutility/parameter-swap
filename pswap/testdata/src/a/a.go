@@ -1,6 +1,9 @@
 package a
 
-import "a/pkg"
+import (
+	"a/pkg"
+	"slices"
+)
 
 func abc(a, b, c string) {}
 func ABC(A, B, C string) {}
@@ -129,7 +132,16 @@ func tests() {
 	i.abc(b, a, c)   // want `passes 'a' as 'b' in call to abc\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to abc\(a string, b string, c string\) \(position 0 vs 1\)`
 
 	func(c string, _ ...string) {}(a, b, c) // want `passes 'c' as '_' in call to func\(c string, _ \[\]string\) \(position 2 vs 0\)`
+
+	slices.IndexFunc(([]int)(nil), ifunc) // provokes *ast.Ident -> *types.Func in varOf (previously assumed *types.Var)
+
+	anys(pkg.ABC, con, nil) // provokes *ast.SelectorExpr -> *types.Func
+	// *ast.Ident -> *types.Const, and *ast.Ident -> *types.Nil in varOf.
 }
+
+func ifunc(int) bool { return false }
+
+const con = "constantly"
 
 type mock struct {
 	x *expectations

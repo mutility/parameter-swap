@@ -162,9 +162,11 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 	varOf := func(x ast.Expr) *types.Var {
 		switch x := x.(type) {
 		case *ast.Ident:
-			return pass.TypesInfo.ObjectOf(x).(*types.Var)
+			v, _ := pass.TypesInfo.ObjectOf(x).(*types.Var)
+			return v
 		case *ast.SelectorExpr:
-			return pass.TypesInfo.ObjectOf(x.Sel).(*types.Var)
+			v, _ := pass.TypesInfo.ObjectOf(x.Sel).(*types.Var)
+			return v
 		case *ast.BasicLit:
 			return nil
 		}
