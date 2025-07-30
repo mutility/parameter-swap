@@ -92,12 +92,12 @@ func tests() {
 
 	TTT(a, b, c) // good
 	TTT(a, a, c) // dup name is visible
-	TTT(b, a, c) // want `passes 'a' as 'b' in call to func a.TTT\[T string\]\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func a.TTT\[T string\]\(a string, b string, c string\) \(position 0 vs 1\)`
+	TTT(b, a, c) // want `passes 'a' as 'b' in call to func a.TTT\[T = string\]\(a T, b T, c T\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func a.TTT\[T = string\]\(a T, b T, c T\) \(position 0 vs 1\)`
 
 	TUV(a, b, c) // good
 	TUV(a, a, c) // dup name is visible
 	TUV(4, a, c) // param name a mismatches type
-	TUV(b, a, c) // want `passes 'a' as 'b' in call to func a.TUV\[T string, U string, V string\]\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func a.TUV\[T string, U string, V string\]\(a string, b string, c string\) \(position 0 vs 1\)`
+	TUV(b, a, c) // want `passes 'a' as 'b' in call to func a.TUV\[T = string, U = string, V = string\]\(a T, b U, c V\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func a.TUV\[T = string, U = string, V = string\]\(a T, b U, c V\) \(position 0 vs 1\)`
 
 	g := G[string]{}
 	g.abc(a, b, c) // good
@@ -143,19 +143,19 @@ func tests() {
 
 	{
 		b, c := mock{}, mock{}
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func a.TTT\[T a.mock\]\(a a.mock, b a.mock, c a.mock\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func a.TTT\[T = a.mock\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 	{
 		var b, c pkg.Struct
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func a.TTT\[T a/pkg.Struct\]\(a a/pkg.Struct, b a/pkg.Struct, c a/pkg.Struct\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func a.TTT\[T = a/pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 	{
 		var b, c map[pkg.Struct][]pkg.Struct
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func a.TTT\[T map\[a/pkg.Struct\]\[\]a/pkg.Struct\]\(a map\[a/pkg.Struct\]\[\]a/pkg.Struct, b map\[a/pkg.Struct\]\[\]a/pkg.Struct, c map\[a/pkg.Struct\]\[\]a/pkg.Struct\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func a.TTT\[T = map\[a/pkg.Struct\]\[\]a/pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 	{
 		var b, c func(pkg.Struct) pkg.Struct
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func a.TTT\[T func\(a/pkg.Struct\) a/pkg.Struct\]\(a func\(a/pkg.Struct\) a/pkg.Struct, b func\(a/pkg.Struct\) a/pkg.Struct, c func\(a/pkg.Struct\) a/pkg.Struct\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func a.TTT\[T = func\(a/pkg.Struct\) a/pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 }
 

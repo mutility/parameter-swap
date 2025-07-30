@@ -188,40 +188,35 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		var rfun any = fun
 		if fun.Name() == "func" {
 			rfun = sig
-		} else if fun.Signature() != sig {
+		} else if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
 			// Partly resolve type parameters in our message.
 			// For example take func Foo[T any](foo T)
 			// When called with a string, its signature is func(foo string)
 			// Make a new func with new signature that merges these, yielding:
-			// func Foo[T string](foo string)
-			typeArgs := make(map[*types.TypeParam]types.Type)
-			mapTypes := func(tps, tas *types.Tuple) {
-				if tps != nil && tas != nil && tps != tas {
-					for i := range min(tps.Len(), tas.Len()) {
-						if tp, ok := tps.At(i).Type().(*types.TypeParam); ok {
-							typeArgs[tp] = tas.At(i).Type()
-						}
-					}
-				}
-			}
-			mapTypes(fun.Signature().Params(), sig.Params())
-			// fmt.Println("typeArgs", typeArgs)
-			asList := func(tup *types.TypeParamList) []*types.TypeParam {
+			// func Foo[T = string](foo T)
+			resolveTypeParams := func(tup *types.TypeParamList) []*types.TypeParam {
 				l := make([]*types.TypeParam, tup.Len())
 				for i := range l {
 					tp := tup.At(i)
-					con := cmp.Or(typeArgs[tp], tp.Constraint())
-					l[i] = types.NewTypeParam(tp.Obj(), con)
+					for i := range fun.Signature().Params().Len() {
+						if tv := fun.Signature().Params().At(i); tv.Type() == tp && i < sig.Params().Len() {
+							cv := sig.Params().At(i)
+							witheq := types.NewTypeName(tp.Obj().Pos(), tp.Obj().Pkg(), tp.Obj().Name()+" =", tp.Obj().Type())
+							tp = types.NewTypeParam(witheq, cv.Type())
+							break
+						}
+					}
+					l[i] = tp
 				}
 				return l
 			}
 
 			rsig := types.NewSignatureType(
 				fun.Signature().Recv(),
-				asList(fun.Signature().RecvTypeParams()),
-				asList(fun.Signature().TypeParams()),
-				sig.Params(),
-				sig.Results(),
+				nil,
+				resolveTypeParams(fun.Signature().TypeParams()),
+				fun.Signature().Params(),
+				fun.Signature().Results(),
 				sig.Variadic(),
 			)
 			rfun = types.NewFunc(fun.Pos(), fun.Pkg(), fun.Name(), rsig)
