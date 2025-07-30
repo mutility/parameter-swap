@@ -127,6 +127,8 @@ func tests() {
 	i.blank(c, b, a) // fine
 	i.abc(a, b, c)   // good
 	i.abc(b, a, c)   // want `passes 'a' as 'b' in call to abc\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to abc\(a string, b string, c string\) \(position 0 vs 1\)`
+
+	func(c string, _ ...string) {}(a, b, c) // want `passes 'c' as '_' in call to func\(c string, _ \[\]string\) \(position 2 vs 0\)`
 }
 
 type mock struct {

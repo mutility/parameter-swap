@@ -132,13 +132,11 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 					return nil
 				}
 				for _, p := range fl.List {
-					ptype := p.Type
-					if ell, ok := p.Type.(*ast.Ellipsis); ok {
-						ptype = ell.Elt
+					if _, ok := p.Type.(*ast.Ellipsis); ok {
 						variadic = true
 					}
 					for _, n := range p.Names {
-						vs = append(vs, types.NewVar(p.Pos(), nil, n.Name, pass.TypesInfo.TypeOf(ptype)))
+						vs = append(vs, types.NewVar(p.Pos(), nil, n.Name, pass.TypesInfo.TypeOf(p.Type)))
 					}
 				}
 				return vs
@@ -157,25 +155,8 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 	}
 
 	sigOf := func(c *ast.CallExpr) *types.Signature {
-		switch callee := pass.TypesInfo.TypeOf(c.Fun).(type) {
-		case *types.Signature:
-			if callee.TypeParams() == nil {
-				return callee
-			}
-			var inst types.Instance
-			switch fun := c.Fun.(type) {
-			case *ast.Ident:
-				inst = pass.TypesInfo.Instances[fun]
-			case *ast.SelectorExpr:
-				inst = pass.TypesInfo.Instances[fun.Sel]
-			}
-
-			if sig, ok := inst.Type.(*types.Signature); ok {
-				return sig
-			}
-			return callee
-		}
-		return nil
+		callee, _ := pass.TypesInfo.TypeOf(c.Fun).(*types.Signature)
+		return callee
 	}
 
 	varOf := func(x ast.Expr) *types.Var {
@@ -219,11 +200,8 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		if recv := fun.Signature().Recv(); recv != nil {
 			funcType = recvType(recv.Type())
 		}
-		funcName, funcSig := fun.Name(), sig.Params()
-		if funcName == "" {
-			funcName = "func"
-		}
 
+		funcName, funcSig := cmp.Or(fun.Name(), "func"), sig.Params()
 		funcTP := ""
 		if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
 			tparams := make([]string, fun.Signature().TypeParams().Len())
