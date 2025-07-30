@@ -46,7 +46,7 @@ func Analyzer() *pswapAnalyzer {
 type (
 	param        types.Var
 	paramMatcher func(*param) bool
-	arg          struct {
+	nameType     struct {
 		Name string
 		Type types.Type
 	}
@@ -72,19 +72,19 @@ func findParam(sig *types.Signature, argIndex int, matchers ...paramMatcher) (in
 func (p *param) Name() string     { return (*types.Var)(p).Name() }
 func (p *param) Type() types.Type { return (*types.Var)(p).Type() }
 
-func (a *arg) CaseMatch(p *param) bool {
+func (a *nameType) CaseMatch(p *param) bool {
 	return a.Name == p.Name() && types.AssignableTo(a.Type, p.Type())
 }
 
-func (a *arg) NoCaseMatch(p *param) bool {
+func (a *nameType) NoCaseMatch(p *param) bool {
 	return strings.EqualFold(a.Name, p.Name()) && types.AssignableTo(a.Type, p.Type())
 }
 
-func (a *arg) CaseTypeMatch(p *param) bool {
+func (a *nameType) CaseTypeMatch(p *param) bool {
 	return a.Name == p.Name() && a.Type == p.Type()
 }
 
-func (a *arg) NoCaseTypeMatch(p *param) bool {
+func (a *nameType) NoCaseTypeMatch(p *param) bool {
 	return strings.EqualFold(a.Name, p.Name()) && a.Type == p.Type()
 }
 
@@ -156,12 +156,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return nil
 	}
 
-	sigOf := func(c *ast.CallExpr) *types.Signature {
-		callee, _ := pass.TypesInfo.TypeOf(c.Fun).(*types.Signature)
-		return callee
-	}
-
-	nameTypeOf := func(x ast.Expr) arg {
+	nameTypeOf := func(x ast.Expr) nameType {
 		var o types.Object
 		switch x := x.(type) {
 		case *ast.Ident:
@@ -169,14 +164,14 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		case *ast.SelectorExpr:
 			o = pass.TypesInfo.ObjectOf(x.Sel)
 		case *ast.BasicLit:
-			return arg{"", pass.TypesInfo.TypeOf(x)}
+			return nameType{"", pass.TypesInfo.TypeOf(x)}
 			// default:
 			// 	fmt.Printf("%s unhandled %T %[1]v\n", pass.Fset.Position(x.Pos()), x)
 		}
 		if o != nil {
-			return arg{o.Name(), o.Type()}
+			return nameType{o.Name(), o.Type()}
 		}
-		return arg{}
+		return nameType{}
 	}
 
 	stripLocalPkg := strings.NewReplacer(func() (pairs []string) {
@@ -185,11 +180,12 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		}
 		return
 	}()...)
-	report := func(n ast.Node, arg arg, ai int, fun *types.Func, sig *types.Signature, pi int) {
-		if fun == nil {
+	report := func(n ast.Node, arg nameType, ai int, call *ast.CallExpr, pi int) {
+		fun := funOf(call)
+		sig, _ := pass.TypesInfo.TypeOf(call.Fun).(*types.Signature)
+		if fun == nil || sig == nil {
 			return
 		}
-		ppass := sig.Params().At(min(sig.Params().Len()-1, ai))
 
 		signature := stripLocalPkg.Replace(func() string {
 			if fun.Name() == "func" {
@@ -234,7 +230,8 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		pass.Reportf(
 			n.Pos(),
 			"passes '%s' as '%s' in call to %s (position %d vs %d)",
-			arg.Name, ppass.Name(), signature, ai, pi,
+			arg.Name, sig.Params().At(min(sig.Params().Len()-1, ai)).Name(),
+			signature, ai, pi,
 		)
 	}
 
@@ -244,7 +241,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			return
 		}
 		call := n.(*ast.CallExpr)
-		sig := sigOf(call)
+		sig, _ := pass.TypesInfo.TypeOf(call.Fun).(*types.Signature)
 		if sig == nil {
 			return
 		}
@@ -262,7 +259,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			if pi, _ := findParam(sig, ai, matchers()...); pi >= 0 {
 				if pi != ai && pi < len(call.Args) {
 					if v := nameTypeOf(call.Args[pi]); v.Name != arg.Name {
-						report(x, arg, ai, funOf(call), sig, pi)
+						report(x, arg, ai, call, pi)
 					}
 				}
 			}
