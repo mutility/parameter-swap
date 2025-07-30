@@ -28,8 +28,8 @@ parameter-swap will report the following:
 
 ```console
 $ parameter-swap ./...
-.../example.go:9:6: foo argument two in position 0 matches parameter in position 1
-.../example.go:9:11: foo argument one in position 1 matches parameter in position 0
+.../example.go:9:6: passes 'two' as 'one' in call to foo(one int, two int) (position 0 vs 1)
+.../example.go:9:11: passes 'one' as 'two' in call to foo(one int, two int) (position 1 vs 0)
 exit status 3
 ```
 
