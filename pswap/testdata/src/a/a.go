@@ -48,7 +48,7 @@ func tests() {
 	// TODO: should the message mention pkg.ABC instead of ABC?
 	pkg.ABC(a, b, c) // good
 	pkg.ABC(a, a, c) // dup name is visible
-	pkg.ABC(b, a, c) // want `passes 'b' as 'a' in call to func a/pkg.ABC\(a string, b string, c string\) \(position 0 vs 1\)` `passes 'a' as 'b' in call to func a/pkg.ABC\(a string, b string, c string\) \(position 1 vs 0\)`
+	pkg.ABC(b, a, c) // want `passes 'b' as 'a' in call to func pkg.ABC\(a string, b string, c string\) \(position 0 vs 1\)` `passes 'a' as 'b' in call to func pkg.ABC\(a string, b string, c string\) \(position 1 vs 0\)`
 
 	ABC(a, b, c) // good
 	ABC(a, a, c) // dup name is visible
@@ -147,15 +147,15 @@ func tests() {
 	}
 	{
 		var b, c pkg.Struct
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = a/pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 	{
 		var b, c map[pkg.Struct][]pkg.Struct
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = map\[a/pkg.Struct\]\[\]a/pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = map\[pkg.Struct\]\[\]pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 	{
 		var b, c func(pkg.Struct) pkg.Struct
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = func\(a/pkg.Struct\) a/pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = func\(pkg.Struct\) pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 }
 

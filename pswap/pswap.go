@@ -8,6 +8,7 @@ import (
 	"cmp"
 	"go/ast"
 	"go/types"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -93,6 +94,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		File      *ast.File
 		Generated bool
 	}
+	var stripLocalPkg func(string) string
 	isCallGenerated := func(n ast.Node) bool {
 		pos := n.Pos()
 		// opt: expect adjacent tokens to be from same file
@@ -103,6 +105,26 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			if f.FileStart <= pos && pos <= f.FileEnd {
 				lastCall.File = f
 				lastCall.Generated = ast.IsGenerated(f)
+				stripLocalPkg = strings.NewReplacer(func() (pairs []string) {
+					for _, c := range " \t()[]*&" {
+						pairs = append(pairs, string(c)+pass.Pkg.Path()+".", string(c))
+						for _, imp := range f.Imports {
+							imppath, _ := strconv.Unquote(imp.Path.Value)
+							as := ""
+							if imp.Name != nil {
+								as = imp.Name.Name
+							} else {
+								for _, pkg := range pass.Pkg.Imports() {
+									if pkg.Path() == imppath {
+										as = pkg.Name()
+									}
+								}
+							}
+							pairs = append(pairs, string(c)+imppath+".", string(c)+as+".")
+						}
+					}
+					return
+				}()...).Replace
 				return lastCall.Generated
 			}
 		}
@@ -174,12 +196,6 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return nameType{}
 	}
 
-	stripLocalPkg := strings.NewReplacer(func() (pairs []string) {
-		for _, c := range " \t()[]*&" {
-			pairs = append(pairs, string(c)+pass.Pkg.Path()+".", string(c))
-		}
-		return
-	}()...)
 	report := func(n ast.Node, arg nameType, ai int, call *ast.CallExpr, pi int) {
 		fun := funOf(call)
 		sig, _ := pass.TypesInfo.TypeOf(call.Fun).(*types.Signature)
@@ -187,7 +203,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			return
 		}
 
-		signature := stripLocalPkg.Replace(func() string {
+		signature := stripLocalPkg(func() string {
 			if fun.Name() == "func" {
 				return sig.String()
 			} else if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
