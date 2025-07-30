@@ -8,11 +8,13 @@ import (
 	"cmp"
 	"go/ast"
 	"go/types"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
 const doc = `pswap reports parameters that were likely swapped
@@ -43,9 +45,13 @@ func Analyzer() *pswapAnalyzer {
 }
 
 type (
-	arg          types.Var
 	param        types.Var
 	paramMatcher func(*param) bool
+	nameType     struct {
+		Pkg  *types.Package
+		Name string
+		Type types.Type
+	}
 )
 
 func findParam(sig *types.Signature, argIndex int, matchers ...paramMatcher) (int, *param) {
@@ -65,31 +71,50 @@ func findParam(sig *types.Signature, argIndex int, matchers ...paramMatcher) (in
 	return -1, nil
 }
 
-func (a *arg) Name() string       { return (*types.Var)(a).Name() }
 func (p *param) Name() string     { return (*types.Var)(p).Name() }
-func (a *arg) Type() types.Type   { return (*types.Var)(a).Type() }
 func (p *param) Type() types.Type { return (*types.Var)(p).Type() }
 
-func (a *arg) CaseMatch(p *param) bool {
-	return a.Name() == p.Name() && types.AssignableTo(a.Type(), p.Type())
+func (a *nameType) CaseMatch(p *param) bool {
+	return a.Name == p.Name() && types.AssignableTo(a.Type, p.Type())
 }
 
-func (a *arg) NoCaseMatch(p *param) bool {
-	return strings.EqualFold(a.Name(), p.Name()) && types.AssignableTo(a.Type(), p.Type())
+func (a *nameType) NoCaseMatch(p *param) bool {
+	return strings.EqualFold(a.Name, p.Name()) && types.AssignableTo(a.Type, p.Type())
 }
 
-func (a *arg) CaseTypeMatch(p *param) bool {
-	return a.Name() == p.Name() && a.Type() == p.Type()
+func (a *nameType) CaseTypeMatch(p *param) bool {
+	return a.Name == p.Name() && a.Type == p.Type()
 }
 
-func (a *arg) NoCaseTypeMatch(p *param) bool {
-	return strings.EqualFold(a.Name(), p.Name()) && a.Type() == p.Type()
+func (a *nameType) NoCaseTypeMatch(p *param) bool {
+	return strings.EqualFold(a.Name, p.Name()) && a.Type == p.Type()
 }
 
 func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 	var lastCall struct {
 		File      *ast.File
 		Generated bool
+	}
+	var qualify types.Qualifier
+	allPkgNames := make(map[string]string, len(pass.Pkg.Imports()))
+	for _, imp := range pass.Pkg.Imports() {
+		allPkgNames[imp.Path()] = imp.Name()
+	}
+	relativeTo := func(f *ast.File) types.Qualifier {
+		localPkgNames := make(map[string]string, len(f.Imports))
+		for _, imp := range f.Imports {
+			path, _ := strconv.Unquote(imp.Path.Value)
+			localPkgNames[path] = allPkgNames[path]
+			if imp.Name != nil {
+				localPkgNames[path] = imp.Name.Name
+			}
+		}
+		return func(other *types.Package) string {
+			if other == pass.Pkg {
+				return ""
+			}
+			return localPkgNames[other.Path()]
+		}
 	}
 	isCallGenerated := func(n ast.Node) bool {
 		pos := n.Pos()
@@ -100,6 +125,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		for _, f := range pass.Files {
 			if f.FileStart <= pos && pos <= f.FileEnd {
 				lastCall.File = f
+				qualify = relativeTo(f)
 				lastCall.Generated = ast.IsGenerated(f)
 				return lastCall.Generated
 			}
@@ -122,7 +148,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 				}
 			}
 		case *ast.SelectorExpr:
-			return selobj(pass.TypesInfo, f).(*types.Func)
+			return typeutil.Callee(pass.TypesInfo, c).(*types.Func)
 		case *ast.FuncLit:
 			// Can't find a *types.Func for a funclit; synthesize the parts we need.
 			// This is presumably brittle, but works well enough.
@@ -154,83 +180,81 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		return nil
 	}
 
-	sigOf := func(c *ast.CallExpr) *types.Signature {
-		callee, _ := pass.TypesInfo.TypeOf(c.Fun).(*types.Signature)
-		return callee
-	}
-
-	varOf := func(x ast.Expr) *types.Var {
+	nameTypeOf := func(x ast.Expr) nameType {
+		var o types.Object
 		switch x := x.(type) {
 		case *ast.Ident:
-			return pass.TypesInfo.ObjectOf(x).(*types.Var)
+			o = pass.TypesInfo.ObjectOf(x)
 		case *ast.SelectorExpr:
-			return pass.TypesInfo.ObjectOf(x.Sel).(*types.Var)
+			o = pass.TypesInfo.ObjectOf(x.Sel)
 		case *ast.BasicLit:
-			return nil
+			return nameType{nil, "", pass.TypesInfo.TypeOf(x)}
+			// default:
+			// 	fmt.Printf("%s unhandled %T %[1]v\n", pass.Fset.Position(x.Pos()), x)
 		}
-		// fmt.Printf("unhandled %T %[1]v\n", x)
-		return nil
+		if o != nil {
+			return nameType{o.Pkg(), o.Name(), o.Type()}
+		}
+		return nameType{}
 	}
 
-	report := func(n ast.Node, arg *arg, ai int, fun *types.Func, sig *types.Signature, pi int) {
-		if fun == nil {
+	report := func(n ast.Node, arg nameType, ai int, call *ast.CallExpr, pi int) {
+		fun := funOf(call)
+		sig, _ := pass.TypesInfo.TypeOf(call.Fun).(*types.Signature)
+		if fun == nil || sig == nil {
 			return
 		}
-		// similar to t.String, but omits package names
-		recvType := func(t types.Type) string {
-			prefix := "("
-			if p, ok := t.(*types.Pointer); ok {
-				t = p.Elem()
-				prefix = "(*"
-			}
-			if n, ok := t.(*types.Named); ok {
-				infix := n.Obj().Name()
-				if ta := n.TypeArgs(); ta != nil {
-					tas := make([]string, ta.Len())
-					for i := range tas {
-						tas[i] = ta.At(i).String()
-					}
-					infix += "[" + strings.Join(tas, ", ") + "]"
-				}
-				return prefix + infix + ")."
-			}
-			return ""
-		}
-		funcType := ""
-		if recv := fun.Signature().Recv(); recv != nil {
-			funcType = recvType(recv.Type())
-		}
 
-		funcName, funcSig := cmp.Or(fun.Name(), "func"), sig.Params()
-		funcTP := ""
-		if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
-			tparams := make([]string, fun.Signature().TypeParams().Len())
-			for i := range fun.Signature().Params().Len() {
-				pt := fun.Signature().Params().At(i).Type()
-				for ti := range len(tparams) {
-					if fun.Signature().TypeParams().At(ti) == pt {
-						tparams[ti] = sig.Params().At(i).Type().String()
+		signature := func() string {
+			if fun.Name() == "func" {
+				return types.TypeString(sig, qualify)
+			} else if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
+				// Partly resolve type parameters in our message.
+				// For example take func Foo[T any](foo T)
+				// When called with a string, its signature is func(foo string)
+				// Make a new func with new signature that merges these, yielding:
+				// func Foo[T = string](foo T)
+				resolveTypeParams := func(tup *types.TypeParamList) []*types.TypeParam {
+					l := make([]*types.TypeParam, tup.Len())
+					for i := range l {
+						tp := tup.At(i)
+						for i := range fun.Signature().Params().Len() {
+							if tv := fun.Signature().Params().At(i); tv.Type() == tp && i < sig.Params().Len() {
+								cv := sig.Params().At(i)
+								witheq := types.NewTypeName(tp.Obj().Pos(), tp.Obj().Pkg(), tp.Obj().Name()+" =", tp.Obj().Type())
+								tp = types.NewTypeParam(witheq, cv.Type())
+								break
+							}
+						}
+						l[i] = tp
 					}
+					return l
 				}
-			}
-			funcTP = "[" + strings.Join(tparams, ", ") + "]"
-		}
 
-		params := sig.Params()
-		ppass := func() *types.Var {
-			if ai >= params.Len() {
-				return params.At(params.Len() - 1)
+				rsig := types.NewSignatureType(
+					fun.Signature().Recv(),
+					nil,
+					resolveTypeParams(fun.Signature().TypeParams()),
+					fun.Signature().Params(),
+					fun.Signature().Results(),
+					sig.Variadic(),
+				)
+				return types.ObjectString(types.NewFunc(fun.Pos(), fun.Pkg(), fun.Name(), rsig), qualify)
 			} else {
-				return params.At(ai)
+				return types.ObjectString(fun, qualify)
 			}
 		}()
 
+		argName := qualify(arg.Pkg)
+		if argName != "" {
+			argName += "."
+		}
+		argName += arg.Name
 		pass.Reportf(
 			n.Pos(),
-			"passes '%s' as '%s' in call to %s%s%s%s (position %d vs %d)",
-			arg.Name(), ppass.Name(),
-			funcType, funcName, funcTP, funcSig,
-			ai, pi,
+			"passes '%s' as '%s' in call to %s (position %d vs %d)",
+			argName, sig.Params().At(min(sig.Params().Len()-1, ai)).Name(),
+			signature, ai, pi,
 		)
 	}
 
@@ -240,38 +264,29 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			return
 		}
 		call := n.(*ast.CallExpr)
-		sig := sigOf(call)
+		sig, _ := pass.TypesInfo.TypeOf(call.Fun).(*types.Signature)
 		if sig == nil {
 			return
 		}
 		for ai, x := range call.Args {
-			argVar := varOf(x)
-			if argVar == nil {
+			arg := nameTypeOf(x)
+			if arg.Name == "" {
 				continue
 			}
-			a := (*arg)(argVar)
 			matchers := func() []paramMatcher {
 				if v.ExactTypeOnly {
-					return []paramMatcher{a.CaseTypeMatch, a.NoCaseTypeMatch}
+					return []paramMatcher{arg.CaseTypeMatch, arg.NoCaseTypeMatch}
 				}
-				return []paramMatcher{a.CaseMatch, a.NoCaseMatch}
+				return []paramMatcher{arg.CaseMatch, arg.NoCaseMatch}
 			}
 			if pi, _ := findParam(sig, ai, matchers()...); pi >= 0 {
 				if pi != ai && pi < len(call.Args) {
-					if v := varOf(call.Args[pi]); v == nil || v.Name() != a.Name() {
-						report(x, a, ai, funOf(call), sig, pi)
+					if v := nameTypeOf(call.Args[pi]); v.Name != arg.Name {
+						report(x, arg, ai, call, pi)
 					}
 				}
 			}
 		}
 	})
 	return nil, nil
-}
-
-func selobj(ti *types.Info, x *ast.SelectorExpr) types.Object {
-	if obj := ti.ObjectOf(x.Sel); obj != nil {
-		return obj
-	}
-	sel := ti.Selections[x]
-	return sel.Obj()
 }
