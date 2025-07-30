@@ -139,7 +139,7 @@ func tests() {
 	// *ast.Ident -> *types.Const, and *ast.Ident -> *types.Nil in varOf.
 
 	func(pro, con string) {}(con, "")   // want `passes 'con' as 'pro' in call to func\(pro string, con string\) \(position 0 vs 1\)`
-	func(abc, xyz any) {}(nil, pkg.ABC) // want `passes 'ABC' as 'xyz' in call to func\(abc any, xyz any\) \(position 1 vs 0\)`
+	func(abc, xyz any) {}(nil, pkg.ABC) // want `passes 'pkg.ABC' as 'xyz' in call to func\(abc any, xyz any\) \(position 1 vs 0\)`
 
 	{
 		b, c := mock{}, mock{}

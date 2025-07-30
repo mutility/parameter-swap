@@ -48,6 +48,7 @@ type (
 	param        types.Var
 	paramMatcher func(*param) bool
 	nameType     struct {
+		Pkg  *types.Package
 		Name string
 		Type types.Type
 	}
@@ -94,7 +95,27 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		File      *ast.File
 		Generated bool
 	}
-	var stripLocalPkg func(string) string
+	var qualify types.Qualifier
+	allPkgNames := make(map[string]string, len(pass.Pkg.Imports()))
+	for _, imp := range pass.Pkg.Imports() {
+		allPkgNames[imp.Path()] = imp.Name()
+	}
+	relativeTo := func(f *ast.File) types.Qualifier {
+		localPkgNames := make(map[string]string, len(f.Imports))
+		for _, imp := range f.Imports {
+			path, _ := strconv.Unquote(imp.Path.Value)
+			localPkgNames[path] = allPkgNames[path]
+			if imp.Name != nil {
+				localPkgNames[path] = imp.Name.Name
+			}
+		}
+		return func(other *types.Package) string {
+			if other == pass.Pkg {
+				return ""
+			}
+			return localPkgNames[other.Path()]
+		}
+	}
 	isCallGenerated := func(n ast.Node) bool {
 		pos := n.Pos()
 		// opt: expect adjacent tokens to be from same file
@@ -104,27 +125,8 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		for _, f := range pass.Files {
 			if f.FileStart <= pos && pos <= f.FileEnd {
 				lastCall.File = f
+				qualify = relativeTo(f)
 				lastCall.Generated = ast.IsGenerated(f)
-				stripLocalPkg = strings.NewReplacer(func() (pairs []string) {
-					for _, c := range " \t()[]*&" {
-						pairs = append(pairs, string(c)+pass.Pkg.Path()+".", string(c))
-						for _, imp := range f.Imports {
-							imppath, _ := strconv.Unquote(imp.Path.Value)
-							as := ""
-							if imp.Name != nil {
-								as = imp.Name.Name
-							} else {
-								for _, pkg := range pass.Pkg.Imports() {
-									if pkg.Path() == imppath {
-										as = pkg.Name()
-									}
-								}
-							}
-							pairs = append(pairs, string(c)+imppath+".", string(c)+as+".")
-						}
-					}
-					return
-				}()...).Replace
 				return lastCall.Generated
 			}
 		}
@@ -186,12 +188,12 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		case *ast.SelectorExpr:
 			o = pass.TypesInfo.ObjectOf(x.Sel)
 		case *ast.BasicLit:
-			return nameType{"", pass.TypesInfo.TypeOf(x)}
+			return nameType{nil, "", pass.TypesInfo.TypeOf(x)}
 			// default:
 			// 	fmt.Printf("%s unhandled %T %[1]v\n", pass.Fset.Position(x.Pos()), x)
 		}
 		if o != nil {
-			return nameType{o.Name(), o.Type()}
+			return nameType{o.Pkg(), o.Name(), o.Type()}
 		}
 		return nameType{}
 	}
@@ -203,9 +205,9 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 			return
 		}
 
-		signature := stripLocalPkg(func() string {
+		signature := func() string {
 			if fun.Name() == "func" {
-				return sig.String()
+				return types.TypeString(sig, qualify)
 			} else if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
 				// Partly resolve type parameters in our message.
 				// For example take func Foo[T any](foo T)
@@ -237,16 +239,21 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 					fun.Signature().Results(),
 					sig.Variadic(),
 				)
-				return types.NewFunc(fun.Pos(), fun.Pkg(), fun.Name(), rsig).String()
+				return types.ObjectString(types.NewFunc(fun.Pos(), fun.Pkg(), fun.Name(), rsig), qualify)
 			} else {
-				return fun.String()
+				return types.ObjectString(fun, qualify)
 			}
-		}())
+		}()
 
+		argName := qualify(arg.Pkg)
+		if argName != "" {
+			argName += "."
+		}
+		argName += arg.Name
 		pass.Reportf(
 			n.Pos(),
 			"passes '%s' as '%s' in call to %s (position %d vs %d)",
-			arg.Name, sig.Params().At(min(sig.Params().Len()-1, ai)).Name(),
+			argName, sig.Params().At(min(sig.Params().Len()-1, ai)).Name(),
 			signature, ai, pi,
 		)
 	}
