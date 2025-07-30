@@ -118,6 +118,15 @@ func tests() {
 	f(a, b, c) // good
 	f(a, a, c) // dup name is visible
 	f(b, a, c) // want `passes 'a' as 'b' in call to f\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to f\(a string, b string, c string\) \(position 0 vs 1\)`
+
+	var i interface {
+		blank(string, string, string)
+		abc(a, b, c string)
+	}
+	i.blank(a, b, c) // fine
+	i.blank(c, b, a) // fine
+	i.abc(a, b, c)   // good
+	i.abc(b, a, c)   // want `passes 'a' as 'b' in call to abc\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to abc\(a string, b string, c string\) \(position 0 vs 1\)`
 }
 
 type mock struct {
