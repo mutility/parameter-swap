@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
 const doc = `pswap reports parameters that were likely swapped
@@ -123,7 +124,7 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 				}
 			}
 		case *ast.SelectorExpr:
-			return selobj(pass.TypesInfo, f).(*types.Func)
+			return typeutil.Callee(pass.TypesInfo, c).(*types.Func)
 		case *ast.FuncLit:
 			// Can't find a *types.Func for a funclit; synthesize the parts we need.
 			// This is presumably brittle, but works well enough.
@@ -182,61 +183,54 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		if fun == nil {
 			return
 		}
-		// similar to t.String, but omits package names
-		recvType := func(t types.Type) string {
-			prefix := "("
-			if p, ok := t.(*types.Pointer); ok {
-				t = p.Elem()
-				prefix = "(*"
-			}
-			if n, ok := t.(*types.Named); ok {
-				infix := n.Obj().Name()
-				if ta := n.TypeArgs(); ta != nil {
-					tas := make([]string, ta.Len())
-					for i := range tas {
-						tas[i] = ta.At(i).String()
-					}
-					infix += "[" + strings.Join(tas, ", ") + "]"
-				}
-				return prefix + infix + ")."
-			}
-			return ""
-		}
-		funcType := ""
-		if recv := fun.Signature().Recv(); recv != nil {
-			funcType = recvType(recv.Type())
-		}
+		ppass := sig.Params().At(min(sig.Params().Len()-1, ai))
 
-		funcName, funcSig := cmp.Or(fun.Name(), "func"), sig.Params()
-		funcTP := ""
-		if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
-			tparams := make([]string, fun.Signature().TypeParams().Len())
-			for i := range fun.Signature().Params().Len() {
-				pt := fun.Signature().Params().At(i).Type()
-				for ti := range len(tparams) {
-					if fun.Signature().TypeParams().At(ti) == pt {
-						tparams[ti] = sig.Params().At(i).Type().String()
+		var rfun any = fun
+		if fun.Name() == "func" {
+			rfun = sig
+		} else if fun.Signature() != sig {
+			// Partly resolve type parameters in our message.
+			// For example take func Foo[T any](foo T)
+			// When called with a string, its signature is func(foo string)
+			// Make a new func with new signature that merges these, yielding:
+			// func Foo[T string](foo string)
+			typeArgs := make(map[*types.TypeParam]types.Type)
+			mapTypes := func(tps, tas *types.Tuple) {
+				if tps != nil && tas != nil && tps != tas {
+					for i := range min(tps.Len(), tas.Len()) {
+						if tp, ok := tps.At(i).Type().(*types.TypeParam); ok {
+							typeArgs[tp] = tas.At(i).Type()
+						}
 					}
 				}
 			}
-			funcTP = "[" + strings.Join(tparams, ", ") + "]"
-		}
-
-		params := sig.Params()
-		ppass := func() *types.Var {
-			if ai >= params.Len() {
-				return params.At(params.Len() - 1)
-			} else {
-				return params.At(ai)
+			mapTypes(fun.Signature().Params(), sig.Params())
+			// fmt.Println("typeArgs", typeArgs)
+			asList := func(tup *types.TypeParamList) []*types.TypeParam {
+				l := make([]*types.TypeParam, tup.Len())
+				for i := range l {
+					tp := tup.At(i)
+					con := cmp.Or(typeArgs[tp], tp.Constraint())
+					l[i] = types.NewTypeParam(tp.Obj(), con)
+				}
+				return l
 			}
-		}()
+
+			rsig := types.NewSignatureType(
+				fun.Signature().Recv(),
+				asList(fun.Signature().RecvTypeParams()),
+				asList(fun.Signature().TypeParams()),
+				sig.Params(),
+				sig.Results(),
+				sig.Variadic(),
+			)
+			rfun = types.NewFunc(fun.Pos(), fun.Pkg(), fun.Name(), rsig)
+		}
 
 		pass.Reportf(
 			n.Pos(),
-			"passes '%s' as '%s' in call to %s%s%s%s (position %d vs %d)",
-			arg.Name, ppass.Name(),
-			funcType, funcName, funcTP, funcSig,
-			ai, pi,
+			"passes '%s' as '%s' in call to %s (position %d vs %d)",
+			arg.Name, ppass.Name(), rfun, ai, pi,
 		)
 	}
 
@@ -271,12 +265,4 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		}
 	})
 	return nil, nil
-}
-
-func selobj(ti *types.Info, x *ast.SelectorExpr) types.Object {
-	if obj := ti.ObjectOf(x.Sel); obj != nil {
-		return obj
-	}
-	sel := ti.Selections[x]
-	return sel.Obj()
 }
