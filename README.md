@@ -27,9 +27,9 @@ Given the following source code `example.go`:
 parameter-swap will report the following:
 
 ```console
-$t parameter-swap ./...
-.../example.go:9:13: argument two in position 0 matches parameter in position 1
-.../example.go:9:13: argument one in position 1 matches parameter in position 0
+$ parameter-swap ./...
+.../example.go:9:6: passes 'two' as 'one' in call to foo(one int, two int) (position 0 vs 1)
+.../example.go:9:11: passes 'one' as 'two' in call to foo(one int, two int) (position 1 vs 0)
 exit status 3
 ```
 
