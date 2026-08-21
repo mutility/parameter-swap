@@ -208,41 +208,8 @@ func (v *pswapAnalyzer) run(pass *analysis.Pass) (any, error) {
 		signature := func() string {
 			if fun.Name() == "func" {
 				return types.TypeString(sig, qualify)
-			} else if fun.Signature() != sig && fun.Signature().TypeParams() != nil {
-				// Partly resolve type parameters in our message.
-				// For example take func Foo[T any](foo T)
-				// When called with a string, its signature is func(foo string)
-				// Make a new func with new signature that merges these, yielding:
-				// func Foo[T = string](foo T)
-				resolveTypeParams := func(tup *types.TypeParamList) []*types.TypeParam {
-					l := make([]*types.TypeParam, tup.Len())
-					for i := range l {
-						tp := tup.At(i)
-						for i := range fun.Signature().Params().Len() {
-							if tv := fun.Signature().Params().At(i); tv.Type() == tp && i < sig.Params().Len() {
-								cv := sig.Params().At(i)
-								witheq := types.NewTypeName(tp.Obj().Pos(), tp.Obj().Pkg(), tp.Obj().Name()+" =", tp.Obj().Type())
-								tp = types.NewTypeParam(witheq, cv.Type())
-								break
-							}
-						}
-						l[i] = tp
-					}
-					return l
-				}
-
-				rsig := types.NewSignatureType(
-					fun.Signature().Recv(),
-					nil,
-					resolveTypeParams(fun.Signature().TypeParams()),
-					fun.Signature().Params(),
-					fun.Signature().Results(),
-					sig.Variadic(),
-				)
-				return types.ObjectString(types.NewFunc(fun.Pos(), fun.Pkg(), fun.Name(), rsig), qualify)
-			} else {
-				return types.ObjectString(fun, qualify)
 			}
+			return types.ObjectString(fun, qualify)
 		}()
 
 		argName := qualify(arg.Pkg)

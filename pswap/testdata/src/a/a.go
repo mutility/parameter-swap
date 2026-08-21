@@ -92,21 +92,21 @@ func tests() {
 
 	TTT(a, b, c) // good
 	TTT(a, a, c) // dup name is visible
-	TTT(b, a, c) // want `passes 'a' as 'b' in call to func TTT\[T = string\]\(a T, b T, c T\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func TTT\[T = string\]\(a T, b T, c T\) \(position 0 vs 1\)`
+	TTT(b, a, c) // want `passes 'a' as 'b' in call to func TTT\[T any\]\(a T, b T, c T\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func TTT\[T any\]\(a T, b T, c T\) \(position 0 vs 1\)`
 
 	TUV(a, b, c) // good
 	TUV(a, a, c) // dup name is visible
 	TUV(4, a, c) // param name a mismatches type
-	TUV(b, a, c) // want `passes 'a' as 'b' in call to func TUV\[T = string, U = string, V = string\]\(a T, b U, c V\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func TUV\[T = string, U = string, V = string\]\(a T, b U, c V\) \(position 0 vs 1\)`
+	TUV(b, a, c) // want `passes 'a' as 'b' in call to func TUV\[T, U, V any\]\(a T, b U, c V\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func TUV\[T, U, V any\]\(a T, b U, c V\) \(position 0 vs 1\)`
 
 	g := G[string]{}
 	g.abc(a, b, c) // good
 	g.abc(a, a, c) // dup name is visible
-	g.abc(b, a, c) // want `passes 'a' as 'b' in call to func \(G\[string\]\).abc\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func \(G\[string\]\).abc\(a string, b string, c string\) \(position 0 vs 1\)`
+	g.abc(b, a, c) // want `passes 'a' as 'b' in call to func \(G\[T\]\).abc\(a T, b T, c T\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func \(G\[T\]\).abc\(a T, b T, c T\) \(position 0 vs 1\)`
 
 	g.pabc(a, b, c) // good
 	g.pabc(a, a, c) // dup name is visible
-	g.pabc(b, a, c) // want `passes 'a' as 'b' in call to func \(\*G\[string\]\).pabc\(a string, b string, c string\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func \(\*G\[string\]\).pabc\(a string, b string, c string\) \(position 0 vs 1\)`
+	g.pabc(b, a, c) // want `passes 'a' as 'b' in call to func \(\*G\[T\]\).pabc\(a T, b T, c T\) \(position 1 vs 0\)` `passes 'b' as 'a' in call to func \(\*G\[T\]\).pabc\(a T, b T, c T\) \(position 0 vs 1\)`
 
 	func(a, b, c string) {}(a, b, c) // good
 	func(a, b, c string) {}(a, a, c) // dup name is visible
@@ -143,19 +143,19 @@ func tests() {
 
 	{
 		b, c := mock{}, mock{}
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = mock\]\(a T, b T, c T\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T any\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 	{
 		var b, c pkg.Struct
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T any\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 	{
 		var b, c map[pkg.Struct][]pkg.Struct
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = map\[pkg.Struct\]\[\]pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T any\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 	{
 		var b, c func(pkg.Struct) pkg.Struct
-		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T = func\(pkg.Struct\) pkg.Struct\]\(a T, b T, c T\) \(position 0 vs 1\)`
+		TTT(b, c, c) // want `passes 'b' as 'a' in call to func TTT\[T any\]\(a T, b T, c T\) \(position 0 vs 1\)`
 	}
 }
 
