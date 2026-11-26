@@ -1,0 +1,13 @@
+all:
+mutility/parameter-swap 119 114
+mod:
+github.com/mutility/parameter-swap 119 114
+root:
+github.com/mutility/parameter-swap/pswap 117 114
+github.com/mutility/parameter-swap 2 0
+pkg:
+github.com/mutility/parameter-swap/pswap 117 114
+github.com/mutility/parameter-swap 2 0
+file:
+github.com/mutility/parameter-swap/main.go 2 0
+github.com/mutility/parameter-swap/pswap/pswap.go 117 114
